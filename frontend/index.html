@@ -4,7 +4,6 @@
   <title>ISL Translator</title>
 
   <style>
-    /* ---- SAME CSS (UNCHANGED) ---- */
     body {
       margin: 0;
       font-family: "Segoe UI", Roboto, Arial, sans-serif;
@@ -22,25 +21,62 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
 
-    header img { height: 48px; }
-    header h1 { font-size: 26px; font-weight: 700; margin: 0; }
+    header img {
+      height: 48px;
+      justify-self: start;
+    }
 
-    .main { display: flex; }
+    header h1 {
+      justify-self: end;
+      font-size: 26px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .main {
+      display: flex;
+    }
+
     .sidebar {
       width: 320px;
       background: #f9fafb;
       height: calc(100vh - 72px);
       padding: 16px;
+      box-shadow: 8px 0 20px rgba(0,0,0,0.08);
       position: fixed;
       left: -340px;
       top: 72px;
       transition: left 0.4s ease;
       z-index: 10;
     }
-    .sidebar.open { left: 0; }
 
-    .content { flex: 1; display: flex; justify-content: center; }
-    .content.shifted { margin-left: 320px; }
+    .sidebar.open {
+      left: 0;
+    }
+
+    .search-box {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      margin-bottom: 12px;
+    }
+
+    .sign-item {
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .sign-item:hover {
+      background: #e0e7ff;
+    }
+
+    .content {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+    }
 
     .panel {
       background: #f9fafb;
@@ -48,10 +84,15 @@
       padding: 16px;
       margin-top: 20px;
       width: 720px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.05);
       position: relative;
     }
 
-    video { width: 100%; border-radius: 14px; background: black; }
+    video {
+      width: 100%;
+      border-radius: 14px;
+      background: black;
+    }
 
     .caption-overlay {
       position: absolute;
@@ -66,7 +107,18 @@
       color: #1e40af;
     }
 
-    .controls { text-align: center; margin-top: 14px; }
+    .timer {
+      text-align: center;
+      font-size: 22px;
+      margin-top: 10px;
+      font-weight: 600;
+    }
+
+    .controls {
+      text-align: center;
+      margin-top: 14px;
+    }
+
     button {
       padding: 10px 24px;
       margin: 6px;
@@ -90,22 +142,19 @@
 </header>
 
 <div class="sidebar" id="sidebar">
-  <h2>Learn Signs</h2>
   <input class="search-box" placeholder="Search sign..." oninput="filterSigns(this.value)">
-  <div class="sign-list" id="signList"></div>
-  <div class="gif-viewer">
-    <img id="gifImage">
-  </div>
+  <div id="signList"></div>
+  <img id="gifImage" style="width:100%; margin-top:10px;">
 </div>
 
 <div class="main">
-  <div class="content" id="content">
+  <div class="content">
     <div class="panel">
       <div class="caption-overlay" id="prediction">Idle</div>
       <video id="video" autoplay muted></video>
-
+      <div class="timer" id="timer">4.0</div>
       <div class="controls">
-        <button class="learn" onclick="toggleSidebar()">Learn Signs</button>
+        <button class="learn" onclick="toggleSidebar()">Learn</button>
         <button class="start" onclick="start()">Start</button>
         <button class="stop" onclick="stop()">Stop</button>
       </div>
@@ -114,7 +163,6 @@
 </div>
 
 <script>
-/* ---------- SIGN DATA ---------- */
 const signs = [
   { name: "Good Morning", gif: "/static/gifs/good_morning.gif" },
   { name: "How are you", gif: "/static/gifs/how_are_you.gif" },
@@ -127,58 +175,89 @@ const signs = [
 ];
 
 const sidebar = document.getElementById("sidebar");
-const content = document.getElementById("content");
-const signListEl = document.getElementById("signList");
+const signList = document.getElementById("signList");
 const gifImage = document.getElementById("gifImage");
 
 function toggleSidebar() {
   sidebar.classList.toggle("open");
-  content.classList.toggle("shifted");
 }
 
 function renderSigns(list) {
-  signListEl.innerHTML = "";
-  list.forEach(sign => {
-    const div = document.createElement("div");
-    div.className = "sign-item";
-    div.innerText = sign.name;
-    div.onclick = () => gifImage.src = sign.gif;
-    signListEl.appendChild(div);
+  signList.innerHTML = "";
+  list.forEach(s => {
+    const d = document.createElement("div");
+    d.className = "sign-item";
+    d.innerText = s.name;
+    d.onclick = () => gifImage.src = s.gif;
+    signList.appendChild(d);
   });
 }
 
 function filterSigns(q) {
   renderSigns(signs.filter(s => s.name.toLowerCase().includes(q.toLowerCase())));
 }
+
 renderSigns(signs);
 
-/* ---------- WEBCAM + WS ---------- */
 const video = document.getElementById("video");
 const predictionEl = document.getElementById("prediction");
+const timerEl = document.getElementById("timer");
+
+let ws;
+let running = false;
+let timeLeft = 4.0;
+let timerInterval;
 
 navigator.mediaDevices.getUserMedia({ video: true })
   .then(stream => video.srcObject = stream);
 
 const protocol = location.protocol === "https:" ? "wss" : "ws";
-const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+ws = new WebSocket(`${protocol}://${location.host}/ws`);
 
 ws.onmessage = e => {
   if (!e.data.startsWith("{")) return;
   predictionEl.innerText = JSON.parse(e.data).label;
+  resetTimer();
 };
 
-function start() { ws.send("START"); predictionEl.innerText = "Listening..."; }
-function stop()  { ws.send("STOP");  predictionEl.innerText = "Stopped"; }
+function startTimer() {
+  clearInterval(timerInterval);
+  timeLeft = 4.0;
+  timerEl.innerText = timeLeft.toFixed(1);
+  timerInterval = setInterval(() => {
+    if (!running) return;
+    timeLeft -= 0.1;
+    timerEl.innerText = timeLeft.toFixed(1);
+  }, 100);
+}
+
+function resetTimer(){ startTimer(); }
+
+function start() {
+  ws.send("START");
+  running = true;
+  predictionEl.innerText = "Listening...";
+  startTimer();
+}
+
+function stop() {
+  ws.send("STOP");
+  running = false;
+  clearInterval(timerInterval);
+  predictionEl.innerText = "Stopped";
+  timerEl.innerText = "4.0";
+}
 
 function sendFrame() {
-  if (video.readyState !== 4) return;
+  if (!running || video.readyState !== 4) return;
   const c = document.createElement("canvas");
   c.width = video.videoWidth;
   c.height = video.videoHeight;
   c.getContext("2d").drawImage(video, 0, 0);
   c.toBlob(b => b && b.arrayBuffer().then(buf => ws.send(buf)), "image/jpeg", 0.6);
 }
-setInterval(sendFrame, 250);
+
+setInterval(sendFrame, 150);
 </script>
 
 </body>

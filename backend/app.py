@@ -1,3 +1,4 @@
+import sys
 import asyncio
 import time
 import json
@@ -11,15 +12,16 @@ import joblib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-import sys
 
+# WINDOWS FIX (SAFE)
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 app = FastAPI()
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / "models"
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
+MODEL_DIR = BASE_DIR / "models"
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
@@ -32,6 +34,7 @@ encoder = joblib.load(MODEL_DIR / "label_encoder.pkl")
 
 mp_holistic = mp.solutions.holistic
 holistic = mp_holistic.Holistic(
+    static_image_mode=False,
     model_complexity=0,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
@@ -48,6 +51,7 @@ feature_buffer = deque(maxlen=WINDOW_SIZE)
 
 def extract_landmarks(results):
     features = []
+
     def extract(block, count):
         if block:
             for lm in block.landmark:
@@ -58,13 +62,24 @@ def extract_landmarks(results):
     extract(results.pose_landmarks, POSE_LANDMARKS * COORDS)
     extract(results.left_hand_landmarks, HAND_LANDMARKS * COORDS)
     extract(results.right_hand_landmarks, HAND_LANDMARKS * COORDS)
+
     return np.array(features, dtype=np.float32)
+
+def landmarks_to_dict(results):
+    def pack(block):
+        return [{"x": lm.x, "y": lm.y, "z": lm.z} for lm in block.landmark] if block else []
+    return {
+        "pose": pack(results.pose_landmarks),
+        "left_hand": pack(results.left_hand_landmarks),
+        "right_hand": pack(results.right_hand_landmarks)
+    }
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     collecting = False
     next_inference_time = None
+    last_results = None
 
     try:
         while True:
@@ -75,35 +90,42 @@ async def websocket_endpoint(ws: WebSocket):
                     collecting = True
                     feature_buffer.clear()
                     next_inference_time = time.time() + INFERENCE_INTERVAL
+                    continue
                 if message["text"] == "STOP":
                     collecting = False
                     feature_buffer.clear()
-                    next_inference_time = None
+                    continue
 
-            if not collecting or "bytes" not in message:
+            if not collecting:
                 continue
 
-            frame = cv2.imdecode(
-                np.frombuffer(message["bytes"], np.uint8),
-                cv2.IMREAD_COLOR
-            )
+            if "bytes" in message:
+                frame = cv2.imdecode(np.frombuffer(message["bytes"], np.uint8), cv2.IMREAD_COLOR)
+                if frame is None:
+                    continue
 
-            results = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            feature_buffer.append(extract_landmarks(results))
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = holistic.process(frame_rgb)
+                last_results = results
+                feature_buffer.append(extract_landmarks(results))
 
-            if time.time() >= next_inference_time:
+            if next_inference_time and time.time() >= next_inference_time:
                 X = np.array(feature_buffer)
-                if len(X) < WINDOW_SIZE:
-                    X = np.vstack([
-                        X,
-                        np.zeros((WINDOW_SIZE - len(X), FEATURES_PER_FRAME))
-                    ])
-                X = X[:WINDOW_SIZE].flatten().reshape(1, -1)
+                if len(X) >= WINDOW_SIZE:
+                    idx = np.linspace(0, len(X)-1, WINDOW_SIZE).astype(int)
+                    X = X[idx]
+                else:
+                    X = np.vstack([X, np.zeros((WINDOW_SIZE-len(X), FEATURES_PER_FRAME))])
 
+                X = X.flatten().reshape(1, -1)
                 pred = model.predict(X)[0]
                 label = encoder.inverse_transform([pred])[0]
 
-                await ws.send_text(json.dumps({"label": label}))
+                await ws.send_text(json.dumps({
+                    "label": label,
+                    "landmarks": landmarks_to_dict(last_results)
+                }))
+
                 feature_buffer.clear()
                 next_inference_time = time.time() + INFERENCE_INTERVAL
 
