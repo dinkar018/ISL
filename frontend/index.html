@@ -33,31 +33,23 @@
       margin: 0;
     }
 
-    .main {
-      display: flex;
-      transition: transform 0.4s ease;
-    }
+    .main { display: flex; }
 
     .sidebar {
       width: 320px;
       background: #f9fafb;
       height: calc(100vh - 72px);
       padding: 16px;
-      box-shadow: 8px 0 20px rgba(0,0,0,0.08);
       position: fixed;
       left: -340px;
       top: 72px;
       transition: left 0.4s ease;
+      box-shadow: 8px 0 20px rgba(0,0,0,0.08);
       z-index: 10;
     }
 
-    .sidebar.open {
-      left: 0;
-    }
-    .sidebar h2 {
-      margin-top: 0;
-      font-size: 20px;
-    }
+    .sidebar.open { left: 0; }
+
     .search-box {
       width: 100%;
       padding: 10px;
@@ -65,34 +57,21 @@
       border: 1px solid #d1d5db;
       margin-bottom: 12px;
     }
-    .sign-list {
-      max-height: 200px;
-      overflow-y: auto;
-      margin-bottom: 12px;
-    }
+
     .sign-item {
       padding: 8px;
       border-radius: 6px;
       cursor: pointer;
     }
 
-    .sign-item:hover {
-      background: #e0e7ff;
-    }
-    .gif-viewer img {
-      width: 100%;
-      border-radius: 10px;
-      border: 1px solid #d1d5db;
-    }
+    .sign-item:hover { background: #e0e7ff; }
+
     .content {
       flex: 1;
       display: flex;
       justify-content: center;
-      transition: margin-left 0.4s ease;
     }
-    .content.shifted {
-      margin-left: 320px;
-    }
+
     .panel {
       background: #f9fafb;
       border-radius: 16px;
@@ -126,7 +105,6 @@
       text-align: center;
       font-size: 22px;
       margin-top: 10px;
-      color: #92400e;
       font-weight: 600;
     }
 
@@ -153,49 +131,33 @@
 <body>
 
 <header>
-  <img src="/static/logo/vnit_log2.png" alt="VNIT Logo">
+  <img src="/static/logo/vnit_log2.png">
   <h1>Indian Sign Language Translator</h1>
 </header>
 
-<!-- SIDEBAR -->
 <div class="sidebar" id="sidebar">
-  <h2>Learn Signs</h2>
-
-  <input
-    class="search-box"
-    placeholder="Search sign..."
-    oninput="filterSigns(this.value)"
-  >
-
-  <div class="sign-list" id="signList"></div>
-
-  <div class="gif-viewer">
-    <img id="gifImage" src="" alt="">
-  </div>
+  <input class="search-box" placeholder="Search sign..." oninput="filterSigns(this.value)">
+  <div id="signList"></div>
+  <img id="gifImage" style="width:100%; margin-top:10px;">
 </div>
 
-<!-- MAIN CONTENT -->
 <div class="main">
-  <div class="content" id="content">
+  <div class="content">
     <div class="panel">
-
       <div class="caption-overlay" id="prediction">Idle</div>
-
       <video id="video" autoplay muted></video>
-
       <div class="timer" id="timer">4.0</div>
-
       <div class="controls">
-        <button class="learn" onclick="toggleSidebar()">Learn Signs</button>
+        <button class="learn" onclick="toggleSidebar()">Learn</button>
         <button class="start" onclick="start()">Start</button>
         <button class="stop" onclick="stop()">Stop</button>
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
+/* ---------- LEARN MODE ---------- */
 const signs = [
   { name: "Good Morning", gif: "/static/gifs/good_morning.gif" },
   { name: "How are you", gif: "/static/gifs/how_are_you.gif" },
@@ -210,11 +172,9 @@ const signs = [
 const sidebar = document.getElementById("sidebar");
 const signList = document.getElementById("signList");
 const gifImage = document.getElementById("gifImage");
-const content = document.getElementById("content");
 
 function toggleSidebar() {
   sidebar.classList.toggle("open");
-  content.classList.toggle("shifted");
 }
 
 function renderSigns(list) {
@@ -234,6 +194,7 @@ function filterSigns(q) {
 
 renderSigns(signs);
 
+/* ---------- WEBCAM + WS ---------- */
 const video = document.getElementById("video");
 const predictionEl = document.getElementById("prediction");
 const timerEl = document.getElementById("timer");
@@ -249,7 +210,9 @@ navigator.mediaDevices.getUserMedia({ video: true })
 const protocol = location.protocol === "https:" ? "wss" : "ws";
 ws = new WebSocket(`${protocol}://${location.host}/ws`);
 
-ws.onmessage = e => {
+ws.onopen = () => console.log("WebSocket connected");
+
+ws.onmessage = (e) => {
   if (!e.data.startsWith("{")) return;
   predictionEl.innerText = JSON.parse(e.data).label;
   resetTimer();
@@ -259,9 +222,15 @@ function startTimer() {
   clearInterval(timerInterval);
   timeLeft = 4.0;
   timerEl.innerText = timeLeft.toFixed(1);
+
   timerInterval = setInterval(() => {
     if (!running) return;
+
     timeLeft -= 0.1;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      clearInterval(timerInterval);
+    }
     timerEl.innerText = timeLeft.toFixed(1);
   }, 100);
 }
@@ -269,6 +238,11 @@ function startTimer() {
 function resetTimer(){ startTimer(); }
 
 function start() {
+  if (ws.readyState !== WebSocket.OPEN) {
+    alert("WebSocket not ready. Please wait a second.");
+    return;
+  }
+
   ws.send("START");
   running = true;
   predictionEl.innerText = "Listening...";
