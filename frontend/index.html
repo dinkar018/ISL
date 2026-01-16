@@ -195,6 +195,8 @@
   </div>
 </div>
 
+// ... (Keep your HTML/CSS exactly as they are) ...
+
 <script>
 const signs = [
   { name: "Good Morning", gif: "/static/gifs/good_morning.gif" },
@@ -231,7 +233,6 @@ function renderSigns(list) {
 function filterSigns(q) {
   renderSigns(signs.filter(s => s.name.toLowerCase().includes(q.toLowerCase())));
 }
-
 renderSigns(signs);
 
 const video = document.getElementById("video");
@@ -246,19 +247,25 @@ let timerInterval;
 navigator.mediaDevices.getUserMedia({ video: true })
   .then(stream => video.srcObject = stream);
 
-const protocol = location.protocol === "https:" ? "wss" : "ws";
-ws = new WebSocket(`${protocol}://${location.host}/ws`);
+function connectWS() {
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${protocol}://${location.host}/ws`);
 
-// FIX: Reset timer only when we get a response from the server
-ws.onmessage = e => {
-  try {
-    const data = JSON.parse(e.data);
-    predictionEl.innerText = data.label;
-    resetTimer(); 
-  } catch (err) {
-    console.log("Processing message...");
-  }
-};
+    ws.onmessage = e => {
+        try {
+            const data = JSON.parse(e.data);
+            if (data.label) {
+                predictionEl.innerText = data.label;
+                resetTimer(); // Reset ONLY on actual output
+            }
+        } catch (err) { console.log("Incoming data:", e.data); }
+    };
+
+    ws.onclose = () => {
+        setTimeout(connectWS, 2000); // Auto-reconnect if Render drops the connection
+    };
+}
+connectWS();
 
 function startTimer() {
   clearInterval(timerInterval);
@@ -266,13 +273,11 @@ function startTimer() {
   timerEl.innerText = timeLeft.toFixed(1);
   timerInterval = setInterval(() => {
     if (!running) return;
-    
     if (timeLeft > 0.1) {
       timeLeft -= 0.1;
       timerEl.innerText = timeLeft.toFixed(1);
     } else {
-      // FIX: Instead of negative, show processing until backend responds
-      timerEl.innerText = "Processing...";
+      timerEl.innerText = "Processing..."; // Wait for server
     }
   }, 100);
 }
@@ -280,6 +285,7 @@ function startTimer() {
 function resetTimer(){ startTimer(); }
 
 function start() {
+  if (ws.readyState !== WebSocket.OPEN) return;
   ws.send("START");
   running = true;
   predictionEl.innerText = "Listening...";
@@ -287,7 +293,7 @@ function start() {
 }
 
 function stop() {
-  ws.send("STOP");
+  if (ws.readyState === WebSocket.OPEN) ws.send("STOP");
   running = false;
   clearInterval(timerInterval);
   predictionEl.innerText = "Stopped";
@@ -295,22 +301,19 @@ function stop() {
 }
 
 function sendFrame() {
-  if (!running || video.readyState !== 4) return;
-  const c = document.createElement("canvas");
-  c.width = video.videoWidth;
-  c.height = video.videoHeight;
-  c.getContext("2d").drawImage(video, 0, 0);
-  // Using blob conversion as in your original code
-  c.toBlob(b => {
-    if (b && running) {
-       b.arrayBuffer().then(buf => {
-         if (ws.readyState === WebSocket.OPEN) ws.send(buf);
-       });
-    }
-  }, "image/jpeg", 0.5); // Reduced quality slightly to 0.5 for faster Render transmission
+  if (!running || video.readyState !== 4 || ws.readyState !== WebSocket.OPEN) return;
+  
+  const canvas = document.createElement("canvas");
+  canvas.width = 320; // Lower resolution for faster processing on Render
+  canvas.height = 240;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  
+  canvas.toBlob(blob => {
+    if (blob) ws.send(blob);
+  }, "image/jpeg", 0.4); // Lower quality to 0.4 to save bandwidth
 }
 
-// Throttle to 200ms to avoid clogging Render's narrow bandwidth
 setInterval(sendFrame, 200);
 </script>
 
