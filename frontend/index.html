@@ -153,27 +153,44 @@
 <body>
 
 <header>
-  <img src="/static/logo/vnit_log2.png">
+  <img src="logo/vnit_log2.png" alt="VNIT Logo">
   <h1>Indian Sign Language Translator</h1>
 </header>
 
+<!-- SIDEBAR -->
 <div class="sidebar" id="sidebar">
-  <input class="search-box" placeholder="Search sign..." oninput="filterSigns(this.value)">
-  <div id="signList"></div>
-  <img id="gifImage" style="width:100%; margin-top:10px;">
+  <h2>Learn Signs</h2>
+
+  <input
+    class="search-box"
+    placeholder="Search sign..."
+    oninput="filterSigns(this.value)"
+  >
+
+  <div class="sign-list" id="signList"></div>
+
+  <div class="gif-viewer">
+    <img id="gifImage" src="" alt="">
+  </div>
 </div>
 
+<!-- MAIN CONTENT -->
 <div class="main">
   <div class="content" id="content">
     <div class="panel">
+
       <div class="caption-overlay" id="prediction">Idle</div>
+
       <video id="video" autoplay muted></video>
+
       <div class="timer" id="timer">4.0</div>
+
       <div class="controls">
-        <button class="learn" onclick="toggleSidebar()">Learn</button>
+        <button class="learn" onclick="toggleSidebar()">Learn Signs</button>
         <button class="start" onclick="start()">Start</button>
         <button class="stop" onclick="stop()">Stop</button>
       </div>
+
     </div>
   </div>
 </div>
@@ -193,9 +210,11 @@ const signs = [
 const sidebar = document.getElementById("sidebar");
 const signList = document.getElementById("signList");
 const gifImage = document.getElementById("gifImage");
+const content = document.getElementById("content");
 
 function toggleSidebar() {
   sidebar.classList.toggle("open");
+  content.classList.toggle("shifted");
 }
 
 function renderSigns(list) {
