@@ -35,6 +35,7 @@
 
     .main {
       display: flex;
+      transition: transform 0.4s ease;
     }
 
     .sidebar {
@@ -53,7 +54,10 @@
     .sidebar.open {
       left: 0;
     }
-
+    .sidebar h2 {
+      margin-top: 0;
+      font-size: 20px;
+    }
     .search-box {
       width: 100%;
       padding: 10px;
@@ -61,7 +65,11 @@
       border: 1px solid #d1d5db;
       margin-bottom: 12px;
     }
-
+    .sign-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
     .sign-item {
       padding: 8px;
       border-radius: 6px;
@@ -71,13 +79,20 @@
     .sign-item:hover {
       background: #e0e7ff;
     }
-
+    .gif-viewer img {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+    }
     .content {
       flex: 1;
       display: flex;
       justify-content: center;
+      transition: margin-left 0.4s ease;
     }
-
+    .content.shifted {
+      margin-left: 320px;
+    }
     .panel {
       background: #f9fafb;
       border-radius: 16px;
@@ -111,6 +126,7 @@
       text-align: center;
       font-size: 22px;
       margin-top: 10px;
+      color: #92400e;
       font-weight: 600;
     }
 
@@ -148,7 +164,7 @@
 </div>
 
 <div class="main">
-  <div class="content">
+  <div class="content" id="content">
     <div class="panel">
       <div class="caption-overlay" id="prediction">Idle</div>
       <video id="video" autoplay muted></video>
