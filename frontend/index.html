@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ISL Translator</title>
+
+  <style>
+    /* ---- SAME CSS (UNCHANGED) ---- */
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Roboto, Arial, sans-serif;
+      background: #e5e7eb;
+      color: #111827;
+      overflow-x: hidden;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      padding: 12px 20px;
+      background: #f9fafb;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    header img { height: 48px; }
+    header h1 { font-size: 26px; font-weight: 700; margin: 0; }
+
+    .main { display: flex; }
+    .sidebar {
+      width: 320px;
+      background: #f9fafb;
+      height: calc(100vh - 72px);
+      padding: 16px;
+      position: fixed;
+      left: -340px;
+      top: 72px;
+      transition: left 0.4s ease;
+      z-index: 10;
+    }
+    .sidebar.open { left: 0; }
+
+    .content { flex: 1; display: flex; justify-content: center; }
+    .content.shifted { margin-left: 320px; }
+
+    .panel {
+      background: #f9fafb;
+      border-radius: 16px;
+      padding: 16px;
+      margin-top: 20px;
+      width: 720px;
+      position: relative;
+    }
+
+    video { width: 100%; border-radius: 14px; background: black; }
+
+    .caption-overlay {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.9);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 26px;
+      font-weight: 700;
+      color: #1e40af;
+    }
+
+    .controls { text-align: center; margin-top: 14px; }
+    button {
+      padding: 10px 24px;
+      margin: 6px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .start { background: #16a34a; color: white; }
+    .stop { background: #dc2626; color: white; }
+    .learn { background: #2563eb; color: white; }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <img src="/static/logo/vnit_log2.png">
+  <h1>Indian Sign Language Translator</h1>
+</header>
+
+<div class="sidebar" id="sidebar">
+  <h2>Learn Signs</h2>
+  <input class="search-box" placeholder="Search sign..." oninput="filterSigns(this.value)">
+  <div class="sign-list" id="signList"></div>
+  <div class="gif-viewer">
+    <img id="gifImage">
+  </div>
+</div>
+
+<div class="main">
+  <div class="content" id="content">
+    <div class="panel">
+      <div class="caption-overlay" id="prediction">Idle</div>
+      <video id="video" autoplay muted></video>
+
+      <div class="controls">
+        <button class="learn" onclick="toggleSidebar()">Learn Signs</button>
+        <button class="start" onclick="start()">Start</button>
+        <button class="stop" onclick="stop()">Stop</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- SIGN DATA ---------- */
+const signs = [
+  { name: "Good Morning", gif: "/static/gifs/good_morning.gif" },
+  { name: "How are you", gif: "/static/gifs/how_are_you.gif" },
+  { name: "I am fine", gif: "/static/gifs/i_am_fine.gif" },
+  { name: "I am going to home", gif: "/static/gifs/i_am_going_to_home.gif" },
+  { name: "I don't know", gif: "/static/gifs/i_dont_know.gif" },
+  { name: "Please help me", gif: "/static/gifs/please_help_me.gif" },
+  { name: "What is your name", gif: "/static/gifs/what_is_your_name.gif" },
+  { name: "Where are you going", gif: "/static/gifs/where_are_you_going.gif" }
+];
+
+const sidebar = document.getElementById("sidebar");
+const content = document.getElementById("content");
+const signListEl = document.getElementById("signList");
+const gifImage = document.getElementById("gifImage");
+
+function toggleSidebar() {
+  sidebar.classList.toggle("open");
+  content.classList.toggle("shifted");
+}
+
+function renderSigns(list) {
+  signListEl.innerHTML = "";
+  list.forEach(sign => {
+    const div = document.createElement("div");
+    div.className = "sign-item";
+    div.innerText = sign.name;
+    div.onclick = () => gifImage.src = sign.gif;
+    signListEl.appendChild(div);
+  });
+}
+
+function filterSigns(q) {
+  renderSigns(signs.filter(s => s.name.toLowerCase().includes(q.toLowerCase())));
+}
+renderSigns(signs);
+
+/* ---------- WEBCAM + WS ---------- */
+const video = document.getElementById("video");
+const predictionEl = document.getElementById("prediction");
+
+navigator.mediaDevices.getUserMedia({ video: true })
+  .then(stream => video.srcObject = stream);
+
+const protocol = location.protocol === "https:" ? "wss" : "ws";
+const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+
+ws.onmessage = e => {
+  if (!e.data.startsWith("{")) return;
+  predictionEl.innerText = JSON.parse(e.data).label;
+};
+
+function start() { ws.send("START"); predictionEl.innerText = "Listening..."; }
+function stop()  { ws.send("STOP");  predictionEl.innerText = "Stopped"; }
+
+function sendFrame() {
+  if (video.readyState !== 4) return;
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth;
+  c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0);
+  c.toBlob(b => b && b.arrayBuffer().then(buf => ws.send(buf)), "image/jpeg", 0.6);
+}
+setInterval(sendFrame, 250);
+</script>
+
+</body>
+</html>
