@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
-# Windows-only fix
+# WINDOWS FIX (SAFE)
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -51,7 +51,6 @@ feature_buffer = deque(maxlen=WINDOW_SIZE)
 
 def extract_landmarks(results):
     features = []
-
     def extract(block, count):
         if block:
             for lm in block.landmark:
@@ -62,7 +61,6 @@ def extract_landmarks(results):
     extract(results.pose_landmarks, POSE_LANDMARKS * COORDS)
     extract(results.left_hand_landmarks, HAND_LANDMARKS * COORDS)
     extract(results.right_hand_landmarks, HAND_LANDMARKS * COORDS)
-
     return np.array(features, dtype=np.float32)
 
 def landmarks_to_dict(results):
@@ -77,7 +75,6 @@ def landmarks_to_dict(results):
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-
     collecting = False
     next_inference_time = None
     last_results = None
@@ -92,7 +89,6 @@ async def websocket_endpoint(ws: WebSocket):
                     feature_buffer.clear()
                     next_inference_time = time.time() + INFERENCE_INTERVAL
                     continue
-
                 if message["text"] == "STOP":
                     collecting = False
                     feature_buffer.clear()
@@ -112,25 +108,26 @@ async def websocket_endpoint(ws: WebSocket):
                 feature_buffer.append(extract_landmarks(results))
 
             if next_inference_time and time.time() >= next_inference_time:
-                X = np.array(feature_buffer)
+                if len(feature_buffer) > 0:
+                    X = np.array(feature_buffer)
+                    if len(X) >= WINDOW_SIZE:
+                        idx = np.linspace(0, len(X)-1, WINDOW_SIZE).astype(int)
+                        X = X[idx]
+                    else:
+                        padding = np.zeros((WINDOW_SIZE - len(X), FEATURES_PER_FRAME))
+                        X = np.vstack([X, padding])
 
-                if len(X) >= WINDOW_SIZE:
-                    idx = np.linspace(0, len(X) - 1, WINDOW_SIZE).astype(int)
-                    X = X[idx]
-                else:
-                    X = np.vstack([X, np.zeros((WINDOW_SIZE - len(X), FEATURES_PER_FRAME))])
+                    X = X.flatten().reshape(1, -1)
+                    pred = model.predict(X)[0]
+                    label = encoder.inverse_transform([pred])[0]
 
-                X = X.flatten().reshape(1, -1)
-                pred = model.predict(X)[0]
-                label = encoder.inverse_transform([pred])[0]
+                    await ws.send_text(json.dumps({
+                        "label": label,
+                        "landmarks": landmarks_to_dict(last_results)
+                    }))
 
-                await ws.send_text(json.dumps({
-                    "label": label,
-                    "landmarks": landmarks_to_dict(last_results)
-                }))
-
-                feature_buffer.clear()
-                next_inference_time = time.time() + INFERENCE_INTERVAL + 1.0
+                    feature_buffer.clear()
+                    next_inference_time = time.time() + INFERENCE_INTERVAL
 
     except WebSocketDisconnect:
         pass
